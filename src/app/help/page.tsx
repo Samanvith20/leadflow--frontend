@@ -1,0 +1,2 @@
+import { DashboardShell } from "@/components/dashboard-shell"; import { Panel } from "@/components/static-ui";
+export default function Page(){return <DashboardShell title="Help and setup" subtitle="Get your first source connected and your team ready to respond."><Panel title="Getting started"><div className="simple-list">{['Add a source','Set qualification rules','Invite your team'].map((x,i)=><article className="simple-row" key={x}><strong>{i+1}. {x}</strong><button className="secondary-button">Open</button></article>)}</div></Panel></DashboardShell>}

@@ -1,0 +1,13 @@
+# Local frontend configuration
+.env.local
+
+# Dependencies and Next.js output
+node_modules/
+.next/
+.next-dev/
+
+# Local debugging output
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
