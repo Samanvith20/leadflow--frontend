@@ -54,7 +54,7 @@ export default function WorkspaceProfilePage() {
     const ai_guidance = {
       brand_tone: text(form, "brandTone"),
       reply_goal: text(form, "replyGoal"),
-      must_not_claim: fromLines(form.get("mustNotClaim")),
+      must_not_claim: profile?.ai_guidance.must_not_claim ?? [],
       escalate_when: fromLines(form.get("escalateWhen")),
     };
 
@@ -98,7 +98,7 @@ export default function WorkspaceProfilePage() {
         </section>
         <section className="profile-section" id="ai-guidance"><header><p className="eyebrow">AI reply guidance</p><h2>How should reply drafts behave?</h2><p>These rules guide AI drafts. Your team reviews a draft before it is sent.</p></header>
           <div className="profile-grid two"><label><RequiredLabel>Reply tone</RequiredLabel><select name="brandTone" defaultValue={profile.ai_guidance.brand_tone ?? tones[0]}>{tones.map((tone) => <option key={tone}>{tone}</option>)}</select></label><label><RequiredLabel>What should the first reply help achieve?</RequiredLabel><select name="replyGoal" defaultValue={profile.ai_guidance.reply_goal ?? goals[0]}>{goals.map((goal) => <option key={goal}>{goal}</option>)}</select><small>Choose the useful next action you want from a new enquiry.</small></label></div>
-          <div className="profile-grid two"><label>Never promise<textarea name="mustNotClaim" defaultValue={asLines(profile.ai_guidance.must_not_claim)} /><small>Optional. One rule per line.</small></label><label>Escalate to a human when<textarea name="escalateWhen" defaultValue={asLines(profile.ai_guidance.escalate_when)} /><small>Optional. One situation per line.</small></label></div>
+          <label>Escalate to a human when<textarea name="escalateWhen" defaultValue={asLines(profile.ai_guidance.escalate_when)} /><small>Optional. One situation per line.</small></label>
         </section>
         <div className="profile-actions"><button className="primary-button" disabled={saving}>{saving ? "Saving…" : "Save workspace profile"}</button></div>
       </form>

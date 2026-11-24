@@ -4,15 +4,10 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { AuthShell } from "@/components/auth-shell";
-import { API_URL, api, ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 
-const steps = ["business_profile", "qualification", "ai_guidance", "connect_source"] as const;
-const stepLabels = ["Business profile", "Priority rules", "AI guidance", "Connect source"];
-const defaultFields = [
-  { key: "full_name", label: "Full name", field_type: "string", required: true, maps_to: "contact.full_name" },
-  { key: "email", label: "Email", field_type: "email", required: true, maps_to: "contact.email" },
-  { key: "message", label: "Requirement", field_type: "string", required: true, maps_to: "lead.enquiry_message" },
-];
+const steps = ["business_profile", "qualification", "ai_guidance"] as const;
+const stepLabels = ["Business profile", "Priority rules", "AI guidance"];
 const commonBuyerSignals = ["Has a clear need", "Has a budget", "Needs help soon", "Shares a business contact"];
 const toneOptions = ["Helpful and professional", "Warm and conversational", "Concise and direct", "Premium and consultative"];
 const replyGoalOptions = ["Book a consultation", "Arrange a callback", "Collect missing details", "Share clear next steps"];
@@ -38,9 +33,6 @@ type OnboardingProgress = {
     escalate_when: string[];
   };
 };
-
-type SourceSummary = { public_id: string; status: "active" | "paused" };
-type NewSource = { public_id: string; webhook_url: string; webhook_secret: string | null };
 
 type TagListFieldProps = {
   label: string;
@@ -141,15 +133,12 @@ export default function Onboarding() {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [progress, setProgress] = useState<OnboardingProgress | null>(null);
-  const [existingSource, setExistingSource] = useState<SourceSummary | null>(null);
-  const [newSource, setNewSource] = useState<NewSource | null>(null);
   const [services, setServices] = useState<string[]>([]);
   const [serviceAreas, setServiceAreas] = useState<string[]>([]);
   const [mustHave, setMustHave] = useState<string[]>([]);
   const [disqualifiers, setDisqualifiers] = useState<string[]>([]);
   const [brandTone, setBrandTone] = useState("Helpful and professional");
   const [replyGoal, setReplyGoal] = useState("Book a consultation");
-  const [mustNotClaim, setMustNotClaim] = useState<string[]>([]);
   const [escalateWhen, setEscalateWhen] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -157,10 +146,7 @@ export default function Onboarding() {
   useEffect(() => {
     async function loadProgress() {
       try {
-        const [savedProgress, sources] = await Promise.all([
-          api<OnboardingProgress>("/api/v1/onboarding", undefined, "GET"),
-          api<SourceSummary[]>("/api/v1/sources", undefined, "GET"),
-        ]);
+        const savedProgress = await api<OnboardingProgress>("/api/v1/onboarding", undefined, "GET");
 
         if (savedProgress.completed_at) {
           router.replace("/");
@@ -175,9 +161,7 @@ export default function Onboarding() {
         setDisqualifiers(savedProgress.qualification.disqualifiers);
         setBrandTone(savedProgress.ai_guidance.brand_tone ?? "Helpful and professional");
         setReplyGoal(savedProgress.ai_guidance.reply_goal ?? "Book a consultation");
-        setMustNotClaim(savedProgress.ai_guidance.must_not_claim);
         setEscalateWhen(savedProgress.ai_guidance.escalate_when);
-        setExistingSource(sources.find((source) => source.status === "active") ?? null);
       } catch (loadError) {
         if (loadError instanceof ApiError && loadError.status === 401) {
           router.replace("/login");
@@ -197,6 +181,7 @@ export default function Onboarding() {
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    if (!progress) return;
     const form = new FormData(event.currentTarget);
 
     if (step === 0) {
@@ -233,7 +218,7 @@ export default function Onboarding() {
     setSaving(true);
 
     try {
-      let updated: OnboardingProgress;
+      let updated: OnboardingProgress | undefined;
 
       if (step === 0) {
         updated = await api<OnboardingProgress>("/api/v1/onboarding", {
@@ -256,42 +241,26 @@ export default function Onboarding() {
         }, "PATCH");
       } else if (step === 2) {
         updated = await api<OnboardingProgress>("/api/v1/onboarding", {
-          current_step: "connect_source",
+          current_step: "ai_guidance",
           ai_guidance: {
             brand_tone: brandTone,
             reply_goal: replyGoal,
-            must_not_claim: mustNotClaim,
+            must_not_claim: progress.ai_guidance.must_not_claim,
             escalate_when: escalateWhen,
           },
         }, "PATCH");
-      } else {
-        const created = await api<NewSource>("/api/v1/sources", {
-          name: form.get("sourceName"),
-          source_type: form.get("sourceType"),
-          configuration: { field_definitions: defaultFields, unknown_field_policy: "reject" },
-        });
-        setNewSource(created);
+        await api("/api/v1/onboarding/complete", {});
+        router.replace("/");
+        router.refresh();
         return;
       }
 
-      setProgress(updated);
-      setStep(stepIndex(updated.current_step));
+      if (updated) {
+        setProgress(updated);
+        setStep(stepIndex(updated.current_step));
+      }
     } catch (saveError) {
       setError(message(saveError));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function complete() {
-    setError("");
-    setSaving(true);
-    try {
-      await api("/api/v1/onboarding/complete", {});
-      router.replace("/");
-      router.refresh();
-    } catch (completeError) {
-      setError(message(completeError));
     } finally {
       setSaving(false);
     }
@@ -324,11 +293,8 @@ export default function Onboarding() {
     );
   }
 
-  const canComplete = Boolean(newSource || existingSource);
-  const webhookUrl = newSource?.webhook_url ?? (existingSource ? `/api/v1/webhooks/${existingSource.public_id}` : null);
-
   return (
-    <AuthShell title="Set up Leadflow" subtitle={`Step ${step + 1} of 4 · ${stepLabels[step]}`}>
+    <AuthShell title="Set up Leadflow" subtitle={`Step ${step + 1} of 3 · ${stepLabels[step]}`}>
       <form className="auth-form" onSubmit={save}>
         {error && <p className="form-notice error">{error}</p>}
 
@@ -358,33 +324,12 @@ export default function Onboarding() {
           </div>
           <ChoiceField label="How should replies sound?" hint="Choose the style that matches your business." options={toneOptions} value={brandTone} onChange={setBrandTone} />
           <ChoiceField label="What should the first reply achieve?" hint="Choose the main next step you want from a new enquiry." options={replyGoalOptions} value={replyGoal} onChange={setReplyGoal} />
-          <TagListField label="Things Leadflow should never promise" required={false} hint="Optional. Add claims that must never appear in a reply." values={mustNotClaim} onChange={setMustNotClaim} placeholder="e.g. Guaranteed results" />
           <TagListField label="Ask a human to help when" required={false} hint="Optional. Add situations that need a team member instead of a standard reply." values={escalateWhen} onChange={setEscalateWhen} placeholder="e.g. They request a custom enterprise quote" />
-        </>}
-
-        {step === 3 && newSource && <div className="source-success">
-          <p className="form-notice success">Source created. Save this secret now—it will never be shown again.</p>
-          <label>Webhook URL<input readOnly value={`${API_URL}${newSource.webhook_url}`} /></label>
-          {newSource.webhook_secret && <label>Webhook secret<input readOnly value={newSource.webhook_secret} /></label>}
-        </div>}
-
-        {step === 3 && !newSource && existingSource && <div className="source-success">
-          <p className="form-notice success">An active source already exists. Its secret cannot be shown again for security.</p>
-          <label>Webhook URL<input readOnly value={`${API_URL}${webhookUrl}`} /></label>
-          <p className="form-hint">If you did not save the secret, rotate it later from Sources.</p>
-        </div>}
-
-        {step === 3 && !newSource && !existingSource && <>
-          <label><span>Source name <RequiredMark /></span><input name="sourceName" required defaultValue="Website enquiries" /></label>
-          <label><span>Source type <RequiredMark /></span><select name="sourceType" defaultValue="website_form"><option value="website_form">Website form backend</option><option value="generic_webhook">Generic webhook</option><option value="manual_entry">Manual entry</option></select></label>
-          <p className="form-hint">We will start with Name, Email, and Requirement. You can add custom fields later in Sources.</p>
         </>}
 
         <div className="onboarding-actions">
           {step > 0 && <button className="secondary-button" type="button" onClick={goBack} disabled={saving}>Back</button>}
-          {step < 3 && <button className="primary-button" disabled={saving}>{saving ? "Saving…" : "Save and continue"}</button>}
-          {step === 3 && !canComplete && <button className="primary-button" disabled={saving}>{saving ? "Creating…" : "Create source"}</button>}
-          {step === 3 && canComplete && <button className="primary-button" type="button" onClick={complete} disabled={saving}>{saving ? "Completing…" : "Complete setup"}</button>}
+          <button className="primary-button" disabled={saving}>{saving ? "Saving…" : step === 2 ? "Finish setup" : "Save and continue"}</button>
         </div>
       </form>
     </AuthShell>
